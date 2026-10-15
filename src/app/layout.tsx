@@ -1,16 +1,9 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
 import { NextIntlClientProvider, hasLocale } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
 import { notFound } from "next/navigation";
 import { routing, localeNames } from "@/i18n/routing";
 import "./globals.css";
-
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
-  display: "swap",
-});
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -80,7 +73,7 @@ export default async function RootLayout({
   const dir = localeNames[activeLocale as keyof typeof localeNames]?.dir ?? 'ltr';
 
   return (
-    <html lang={activeLocale} dir={dir} className={`${inter.variable} h-full antialiased`}>
+    <html lang={activeLocale} dir={dir} className="h-full antialiased">
       <head>
         <link rel="manifest" href="/manifest.json" />
         <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png?v=3boxes-2026" />

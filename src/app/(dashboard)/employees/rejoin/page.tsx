@@ -52,6 +52,9 @@ interface RejoinRecord {
   department: string;
   designation?: string;
   reportingManager?: string;
+  approver?: string;
+  rejectionReason?: string;
+  decisionDate?: string | null;
   status: string;
   createdAt: string;
 }
@@ -114,6 +117,8 @@ export default function RejoinPage() {
   const [submitting, setSubmitting] = useState(false);
   const [records, setRecords] = useState<RejoinRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [rejectingRecord, setRejectingRecord] = useState<RejoinRecord | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
 
   const updateField = (field: string, value: string | boolean) => {
     setForm(prev => ({ ...prev, [field]: value }));
@@ -161,8 +166,10 @@ export default function RejoinPage() {
     if (!form.reportingManager) return 'Please select a Reporting Manager';
     if (!form.rejoinReason.trim() || form.rejoinReason.trim().length < 20) return 'Rejoin reason must be at least 20 characters';
     // Reporting Manager name validation: only letters, spaces, hyphens, apostrophes, periods
-    if (form.reportingManager.trim()) {
-      if (!/^[A-Za-z\u00C0-\u017F\u0900-\u097F\s.'-]+$/.test(form.reportingManager.trim())) {
+    const manager = managers.find(m => m.id === form.reportingManager);
+    const managerName = manager ? `${manager.firstName} ${manager.lastName}`.trim() : form.reportingManager.trim();
+    if (managerName) {
+      if (!/^[A-Za-z\u00C0-\u017F\u0900-\u097F\s.'-]+$/.test(managerName)) {
         return 'Reporting Manager name must contain only letters, spaces, hyphens, apostrophes, or periods. Numbers and special characters are not allowed.';
       }
     }
@@ -185,7 +192,7 @@ export default function RejoinPage() {
         newDesignation: form.newDesignation,
         newEmployeeCode: form.newEmployeeCode.trim() || null,
         employmentType: form.employmentType,
-        reportingManager: form.reportingManager.trim() || null,
+        reportingManager: manager ? `${manager.firstName} ${manager.lastName}`.trim() : form.reportingManager.trim() || null,
         serviceContinuity: form.serviceContinuity,
         leaveBalanceCarryForward: form.leaveBalanceCarryForward,
         gratuityContinuity: form.gratuityContinuity,
@@ -212,13 +219,20 @@ export default function RejoinPage() {
   };
 
   const decide = async (record: RejoinRecord, action: 'approve' | 'reject') => {
-    const rejectionReason = action === 'reject' ? window.prompt('Enter rejection reason:') : undefined;
-    if (action === 'reject' && !rejectionReason?.trim()) { toast.error('Rejection reason is required.'); return; }
-    const res = await fetch(`/api/employees/rejoin/${record.id}`, { method: 'PATCH', headers: getAuthHeaders(), body: JSON.stringify({ action, rejectionReason }) });
+    if (action === 'reject') { setRejectionReason(''); setRejectingRecord(record); return; }
+    const res = await fetch(`/api/employees/rejoin/${record.id}`, { method: 'PATCH', headers: getAuthHeaders(), body: JSON.stringify({ action }) });
     const data = await res.json();
     if (!res.ok) { toast.error(data.error || 'Unable to update request'); return; }
     toast.success(action === 'approve' ? 'Rejoin request approved' : 'Rejoin request rejected');
     fetchRecords();
+  };
+
+  const submitRejection = async () => {
+    if (!rejectingRecord || !rejectionReason.trim()) { toast.error('Rejection reason is required.'); return; }
+    const res = await fetch(`/api/employees/rejoin/${rejectingRecord.id}`, { method: 'PATCH', headers: getAuthHeaders(), body: JSON.stringify({ action: 'reject', rejectionReason: rejectionReason.trim() }) });
+    const data = await res.json();
+    if (!res.ok) { toast.error(data.error || 'Unable to reject request'); return; }
+    setRejectingRecord(null); setRejectionReason(''); toast.success('Rejoin request rejected'); fetchRecords();
   };
 
   const deptLabel = (v: string) => DEPARTMENTS.find(d => d.value === v)?.label || v;
@@ -388,15 +402,16 @@ export default function RejoinPage() {
                 <th className="text-left px-4 py-3 font-semibold text-slate-700">Department</th>
                 <th className="text-left px-4 py-3 font-semibold text-slate-700">Designation</th>
                 <th className="text-left px-4 py-3 font-semibold text-slate-700">Reporting Manager</th>
+                <th className="text-left px-4 py-3 font-semibold text-slate-700">Approver</th>
                 <th className="text-left px-4 py-3 font-semibold text-slate-700">Status</th>
                 <th className="text-left px-4 py-3 font-semibold text-slate-700">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
-                <tr><td colSpan={9} className="text-center py-8 text-slate-400">Loading...</td></tr>
+                <tr><td colSpan={10} className="text-center py-8 text-slate-400">Loading...</td></tr>
               ) : records.length === 0 ? (
-                <tr><td colSpan={9} className="text-center py-12">
+                <tr><td colSpan={10} className="text-center py-12">
                   <FiUserCheck className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                   <p className="text-slate-500">No rejoin requests yet</p>
                   <p className="text-xs text-slate-400 mt-1">Submit a rejoin request using the form above</p>
@@ -408,9 +423,10 @@ export default function RejoinPage() {
                   <td className="px-4 py-3 text-slate-600">{r.newCode}</td>
                   <td className="px-4 py-3 text-slate-600">{fmtDate(r.rejoinDate)}</td>
                   <td className="px-4 py-3 text-slate-600">{deptLabel(r.department)}</td>
-                  <td className="px-4 py-3 text-slate-600">{r.designation || '—'}</td>
+                  <td className="px-4 py-3 text-slate-600">{r.designation || r.newDesignation || '—'}</td>
                   <td className="px-4 py-3 text-slate-600">{r.reportingManager || '—'}</td>
-                  <td className="px-4 py-3"><span className={getStatusBadge(r.status)}>{r.status}</span></td>
+                  <td className="px-4 py-3 text-slate-600">{r.approver || '—'}</td>
+                  <td className="px-4 py-3"><span className={getStatusBadge(r.status)}>{r.status}</span>{r.rejectionReason && <div className="text-xs text-red-600 mt-1">Reason: {r.rejectionReason}</div>}{r.decisionDate && <div className="text-xs text-slate-400 mt-1">Decision: {fmtDate(r.decisionDate)}</div>}</td>
                   <td className="px-4 py-3">{r.status === 'pending' && <div className="flex gap-2"><button onClick={() => decide(r, 'approve')} className="text-xs px-2 py-1 rounded bg-emerald-600 text-white">Approve</button><button onClick={() => decide(r, 'reject')} className="text-xs px-2 py-1 rounded bg-red-600 text-white">Reject</button></div>}</td>
                 </tr>
               ))}
@@ -418,6 +434,16 @@ export default function RejoinPage() {
           </table>
         </div>
       </div>
+      {rejectingRecord && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <h2 className="text-lg font-semibold text-slate-800">Reject rejoin request</h2>
+            <p className="mt-1 text-sm text-slate-500">Enter the rejection reason.</p>
+            <textarea autoFocus value={rejectionReason} onChange={e => setRejectionReason(e.target.value)} className="mt-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" rows={4} placeholder="Rejection reason" />
+            <div className="mt-4 flex justify-end gap-2"><button onClick={() => setRejectingRecord(null)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm">Cancel</button><button onClick={submitRejection} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white">Reject request</button></div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -373,7 +373,8 @@ export async function POST(request: Request) {
       // break punches show a longer break, deduct the full actual duration.
       const grossMinutes = (now.getTime() - existingRecord.checkIn.getTime()) / 60000;
       const breakPolicy = await loadAttendanceBreakPolicy(db);
-      const punchedBreakMinutes = existingRecord.breakIn && existingRecord.breakOut
+      const hasCompleteBreak = Boolean(existingRecord.breakIn && existingRecord.breakOut);
+      const punchedBreakMinutes = hasCompleteBreak
         ? effectiveBreakMinutes(existingRecord.breakIn, existingRecord.breakOut, existingRecord.checkIn, now, breakPolicy)
         : null;
       const localMinutes = (value: Date) => {
@@ -382,14 +383,13 @@ export async function POST(request: Request) {
       };
       const checkInMinutes = localMinutes(existingRecord.checkIn);
       const checkOutMinutes = localMinutes(now);
-      const lunchOverlapMinutes = effectiveBreakMinutes(null, null, existingRecord.checkIn, now, breakPolicy);
-      const breakMinutes = punchedBreakMinutes != null ? punchedBreakMinutes : lunchOverlapMinutes;
-      const workHours = Math.max(0, (grossMinutes - breakMinutes) / 60);
+      const breakMinutes = punchedBreakMinutes;
+      const workHours = breakMinutes == null ? null : Math.max(0, (grossMinutes - breakMinutes) / 60);
       const canFinalize = checkOutMinutes >= breakPolicy.shiftEndMinutes;
-      const belowEightHours = canFinalize && workHours < 8;
+      const belowEightHours = canFinalize && workHours != null && workHours < 8;
       // Overtime is earned only after both requirements are met:
       // eight net production hours and the 6:30 PM IST shift end.
-      const overtime = workHours >= 8 && checkOutMinutes > breakPolicy.shiftEndMinutes
+      const overtime = workHours != null && workHours >= 8 && checkOutMinutes > breakPolicy.shiftEndMinutes
         ? Math.max(0, (checkOutMinutes - breakPolicy.shiftEndMinutes) / 60)
         : 0;
 
@@ -402,11 +402,12 @@ export async function POST(request: Request) {
         },
         data: {
           checkOut: now,
-          workHours: canFinalize ? parseFloat(workHours.toFixed(2)) : null,
+          workHours: canFinalize && workHours != null ? parseFloat(workHours.toFixed(2)) : null,
           overtime: canFinalize ? parseFloat(overtime.toFixed(2)) : 0,
           status: belowEightHours ? 'half_day' : existingRecord.status,
           halfDay: belowEightHours,
-          breakMinutes: Math.round(breakMinutes),
+          breakMinutes: breakMinutes == null ? null : Math.round(breakMinutes),
+          notes: breakMinutes == null ? `${existingRecord.notes ? `${existingRecord.notes} ` : ''}Break-In and Break-Out are required. Apply attendance regularization.` : existingRecord.notes,
         },
       });
 
